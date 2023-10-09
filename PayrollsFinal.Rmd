@@ -1,0 +1,239 @@
+---
+title: "fuckthis"
+author: "Jacob Feinas"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(rvest)
+library(car)
+library(xlsx)
+library(curl)
+library(readxl)
+library(kableExtra)
+library(lmtest)
+library(gridExtra)
+library(grid)
+library(ggplotify)
+library(ggpubr)
+```
+
+
+```{r}
+years <- c(2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+htmls <- paste0("nhl", years, ".html")
+
+payrolltables <- list()
+pattern <- "\\(\\d{2,3}\\)"
+
+for (i in 1:length(htmls)) {
+  payrolltemp <- read_html(htmls[i])
+  payrolltempr <- payrolltemp %>% 
+    html_nodes("table")
+  payrolltables[i] <- payrolltempr %>% 
+    html_table 
+  payrolltables[[i]]$Team <- str_sub(payrolltables[[i]]$Team, start = -3)
+  payrolltables[[i]]$Team <- str_replace(payrolltables[[i]]$Team, "PHX", "ARI")
+  
+  for (j in 1:length(payrolltables[[i]]$Team)) {
+    payrolltables[[i]][j,3] <- str_extract(payrolltables[[i]][j,3], pattern) %>%
+      str_replace_all("\\(", "") %>% 
+      str_replace_all("\\)", "")
+  
+    for (h in 6:10) {
+      payrolltables[[i]][j, h] <- payrolltables[[i]][j, h] %>%
+        str_replace_all(",", "")
+    }
+    
+  }
+  
+}
+
+for (i in 1:(length(years))){
+  temp <- payrolltables[[i]] %>% dplyr::mutate("Year" = years[i])
+  colnames(temp)[3] <- "Points"
+  colnames(temp) <- str_replace_all(colnames(temp)[c(1:11)], " ", "")
+  colnames(temp)[2] <- "Team"
+  temp <- temp %>% dplyr::select(-ActivePlayers)
+  payrolltables[[i]] <- temp
+}
+
+# input missing ARI point totals
+payrolltables[[1]][13, 3] <- "97"
+payrolltables[[2]][2, 3] <- "51"
+payrolltables[[3]][11, 3] <- "89"
+
+payroll2011 <- payrolltables[[1]]
+payroll2012 <- payrolltables[[2]]
+payroll2013 <- payrolltables[[3]]
+payroll2014 <- payrolltables[[4]]
+payroll2015 <- payrolltables[[5]]
+payroll2016 <- payrolltables[[6]]
+payroll2017 <- payrolltables[[7]]
+payroll2018 <- payrolltables[[8]]
+payroll2019 <- payrolltables[[9]]
+payroll2020 <- payrolltables[[10]]
+payroll2021 <- payrolltables[[11]]
+payroll2022 <- payrolltables[[12]]
+
+payrollComb <- rbind(payroll2011, payroll2012, payroll2013, payroll2014, payroll2015, payroll2016, payroll2017, payroll2018, payroll2019, payroll2020, payroll2021, payroll2022)
+
+retention <- read_xlsx("retention.xlsx", 1)
+retention <- retention %>% dplyr::select(-1)
+
+rownames(retention) <- c("COL", "CHI", "STL", "BOS", "MTL", "VAN", "WAS", "ARI", "NJD", "ANA", "CGY", "PHI", "CAR", "NYI", "CBJ", "WPG", "LAK", "TOR", "TBL", "EDM", "FLA", "PIT", "NSH", "NYR", "DET", "BUF", "OTT", "SJS", "DAL", "MIN")
+
+colnames(retention) <- c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+
+retention <- pivot_longer(retention, c(`2012`:`2022`), names_to = "Year", values_to = "Retention")
+
+retention <- retention %>% mutate("Team" = rep(c("COL", "CHI", "STL", "BOS", "MTL", "VAN", "WAS", "ARI", "NJD", "ANA", "CGY", "PHI", "CAR", "NYI", "CBJ", "WPG", "LAK", "TOR", "TBL", "EDM", "FLA", "PIT", "NSH", "NYR", "DET", "BUF", "OTT", "SJS", "DAL", "MIN"), each = 11))
+
+payrollComb <- payrollComb %>% dplyr::slice(-(1:30))
+
+retention$Year <- as.double(retention$Year)
+
+payrollComb <- left_join(payrollComb, retention, by = c("Year", "Team"))
+payrollComb <- na.omit(payrollComb)
+
+payrollComb <- payrollComb %>% mutate("Cup?" = FALSE)
+
+payrollComb$`Cup?`[payrollComb$Team == "LAK" & payrollComb$Year == 2012] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "CHI" & payrollComb$Year == 2013] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "LAK" & payrollComb$Year == 2014] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "CHI" & payrollComb$Year == 2015] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "PIT" & payrollComb$Year == 2016] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "PIT" & payrollComb$Year == 2017] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "WAS" & payrollComb$Year == 2018] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "STL" & payrollComb$Year == 2019] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "TBL" & payrollComb$Year == 2020] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "TBL" & payrollComb$Year == 2021] <- TRUE
+payrollComb$`Cup?`[payrollComb$Team == "COL" & payrollComb$Year == 2022] <- TRUE
+```
+
+```{r}
+payrollComb$Points <- as.integer(payrollComb$Points)
+payrollComb$ForwardCap <- as.integer(payrollComb$ForwardCap)
+payrollComb$DefenseCap <- as.integer(payrollComb$DefenseCap)
+payrollComb$GoaltenderCap <- as.integer(payrollComb$GoaltenderCap)
+payrollComb$Est.TotalCap <- as.integer(payrollComb$Est.TotalCap)
+payrollComb$CapSpace <- as.integer(payrollComb$CapSpace)
+
+payrollComb <- payrollComb %>% dplyr::mutate(across(c(5:9), function(x) x/1000000))
+```
+
+
+```{r}
+payrollModFor <- lm(Points~ForwardCap, data = payrollComb)
+payrollModDef <- lm(Points~DefenseCap, data = payrollComb)
+payrollModGoal <- lm(Points~GoaltenderCap, data = payrollComb)
+payrollModTot <- lm(Points~Est.TotalCap, data = payrollComb)
+payrollModSpace <- lm(Points~CapSpace, data = payrollComb)
+retentionMod <- lm(Points~Retention, data = payrollComb)
+
+payrollModFull <- lm(Points ~ ForwardCap + DefenseCap + GoaltenderCap + Est.TotalCap + CapSpace + Retention, data = payrollComb)
+payrollModNull <- lm(Points ~ 1, data = payrollComb)
+
+plot(payrollModFor)
+plot(payrollModDef)
+plot(payrollModGoal)
+plot(payrollModTot)
+plot(payrollModSpace)
+plot(retentionMod)
+
+summary(payrollModFor)
+summary(payrollModDef)
+summary(payrollModGoal)
+summary(payrollModTot)
+summary(payrollModSpace)
+summary(retentionMod)
+summary(payrollModFull)
+
+forwardCor <- with(cor.test(Points, ForwardCap), data = payrollComb)
+defenseCor <- with(cor.test(Points, DefenseCap), data = payrollComb)
+goalCor <- with(cor.test(Points, GoaltenderCap), data = payrollComb)
+totalCor <- with(cor.test(Points, Est.TotalCap), data = payrollComb)
+spaceCor <- with(cor.test(Points, CapSpace), data = payrollComb)
+totalSpaceCor <- with(cor.test(CapSpace, Est.TotalCap), data = payrollComb)
+retCor <- with(cor.test(Points, Retention), data = payrollComb)
+
+forwardCor$estimate
+defenseCor$estimate
+goalCor$estimate
+totalCor$estimate
+spaceCor$estimate
+totalSpaceCor$estimate
+retCor$estimate
+
+pmf <- data.frame(round(payrollModFull$coefficients, digits = 4))
+rownames(pmf) <- c("Intercept", "Forward Salaries", "Defense Salaries", "Goaltender Salaries", "Total Cap", "Cap Space", "Player Retention")
+colnames(pmf) <- c("Estimates")
+
+colinear <- data.frame(round(vif(payrollModFull), digits = 4))
+colnames(colinear) <- c("VIF")
+colinear <- rbind(c(NA), colinear)
+rownames(colinear) <- c("Intercept", "Forward Salaries", "Defense Salaries", "Goaltender Salaries", "Total Cap", "Cap Space", "Player Retention")
+
+cors <- data.frame(NA, forwardCor$estimate, defenseCor$estimate, goalCor$estimate, totalCor$estimate, spaceCor$estimate, retCor$estimate)
+cors <- round(cors, digits = 3)
+colnames(cors) <- c("Intercept", "Forwards", "Defensemen", "Goaltenders", "Total Cap", "Cap Space", "Retention")
+rownames(cors) <- c("Correlation")
+cors <- cors %>% pivot_longer(cols = c(1:7), names_to = "type", values_to = "Correlation")
+
+output <- cbind(pmf, colinear, cors)
+
+output <- output %>% select(-type)
+output
+
+kbl(output) %>% kable_classic(full_width = F, html_font = "Times New Roman") %>% as_image(width = 8, file = "/Users/jacobfeinas/Desktop/Spring 2023/Undergraduate Research/output.png", zoom = 3)
+
+bptest(payrollModFull, studentize = FALSE)
+
+bp <- data.frame(6.7935, 6, 0.3404)
+colnames(bp) <- c("Test Statistic", "df", "p-value")
+rownames(bp) <- c("Breusch-Pagan Test")
+
+kbl(bp) %>% kable_classic(full_width = F, html_font = "Times New Roman") %>% as_image(width = 8, file = "/Users/jacobfeinas/Desktop/Spring 2023/Undergraduate Research/bptest.png", zoom = 2)
+
+plot(payrollModFull)
+
+grid.arrange(p1, p2, nrow = 1)
+```
+
+```{r}
+# forward selection model
+stepForMod <- step(payrollModNull, scope = list(lower=payrollModNull, upper=payrollModFull), direction = "forward")
+
+# backward selection model
+stepBackMod <- step(payrollModFull, direction = "backward")
+
+## Both the forward and backward models produced the same variable selection
+
+# ANOVA to check if full is preferred over null
+anova(payrollModNull, payrollModFull)
+
+summary(payrollModFull)
+
+## check for multicollinearity
+vif(payrollModFull)
+```
+
+```{r, fig.width = 6}
+forplot <- ggplot() + geom_point(data = payrollComb, aes(x = ForwardCap, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Total Forward Salaries ($ in Millions)", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+defplot <- ggplot() + geom_point(data = payrollComb, aes(x = DefenseCap, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Total Defensemen Salaries ($ in Millions)", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+goalplot <- ggplot() + geom_point(data = payrollComb, aes(x = GoaltenderCap, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Total Goaltender Salaries ($ in Millions)", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+totalplot <- ggplot() + geom_point(data = payrollComb, aes(x = Est.TotalCap, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Total Salaries ($ in Millions)", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+spaceplot <- ggplot() + geom_point(data = payrollComb, aes(x = CapSpace, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Total Cap Space ($ in Millions)", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+retplot <- ggplot() + geom_point(data = payrollComb, aes(x = Retention, y = Points, color = `Cup?`)) + theme_minimal() + guides(color = guide_legend(title = "Stanley Cup\nChampions")) + labs(x = "Team Retention from Previous Year", y = "Team Points Total") + scale_color_manual(values=c("#56B4E9", "#E69F00"))
+
+fullplot <- ggarrange(forplot, defplot, goalplot, totalplot, spaceplot, retplot, nrow = 2, ncol = 3, common.legend = TRUE, legend = "bottom")
+fullplot
+ggsave("fullplot.png", plot = fullplot, device = png, width = 12, height = 6)
+```
